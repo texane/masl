@@ -203,25 +203,29 @@ static int gpio_set_both_edges(gpio_handle_t* h)
 __attribute__((unused))
 static int gpio_set_value(gpio_handle_t* h, unsigned int x)
 {
-  unsigned char buf[4];
-  ssize_t n;
+  char c;
 
-  buf[0] = '0' + x;
-  n = write(h->value_fd, buf, sizeof(buf));
-  if (n <= 0) return -1;
+  c = '0' + x;
+  if (write(h->value_fd, &c, sizeof(c)) != (ssize_t)sizeof(c))
+  {
+    MASL_PERROR("write gpio value\n");
+    return -1;
+  }
   return 0;
 }
 
 __attribute__((unused))
 static int gpio_get_value(gpio_handle_t* h, unsigned int* x)
 {
-  unsigned char buf[4];
-  ssize_t n;
+  char c;
 
-  n = read(h->value_fd, buf, sizeof(buf));
-  if (n <= 0) return -1;
+  if (read(h->value_fd, &c, sizeof(c)) != (ssize_t)sizeof(c))
+  {
+    MASL_PERROR("read gpio value\n");
+    return -1;
+  }
 
-  *x = (buf[0] == '0') ? 0 : 1;
+  *x = (c == '0') ? 0 : 1;
 
   return 0;
 }
@@ -241,19 +245,26 @@ static int gpio_get_wait_fd(gpio_handle_t* h)
 typedef struct masl_handle
 {
   gpio_handle_t int_gpio;
-  gpio_handle_t wake_gpio;
   gpio_handle_t reset_gpio;
-
+  gpio_handle_t wake_gpio;
 } masl_handle_t;
 
 static int masl_init(masl_handle_t* h)
 {
   if (gpio_open_in(&h->int_gpio, MASL_CONFIG_GPIO_INT))
     goto on_error_0;
+
   if (gpio_set_both_edges(&h->int_gpio))
     goto on_error_1;
+
+  /* 0 as default value resets the slave */
+  if (gpio_open_out(&h->reset_gpio, MASL_CONFIG_GPIO_RESET))
+    goto on_error_2;
+  gpio_set_value(&h->reset_gpio, 1);
+
   return 0;
 
+ on_error_2:
  on_error_1:
   gpio_close(&h->int_gpio);
  on_error_0:
@@ -262,7 +273,16 @@ static int masl_init(masl_handle_t* h)
 
 static int masl_fini(masl_handle_t* h)
 {
+  gpio_close(&h->reset_gpio);
   gpio_close(&h->int_gpio);
+  return 0;
+}
+
+static int masl_reset_slave(masl_handle_t* h)
+{
+  if (gpio_set_value(&h->reset_gpio, 0)) return -1;
+  usleep(1000);
+  gpio_set_value(&h->reset_gpio, 1);
   return 0;
 }
 
@@ -270,6 +290,7 @@ static int masl_loop(masl_handle_t* h)
 {
   const int fd = gpio_get_wait_fd(&h->int_gpio);
   unsigned char buf[32];
+  unsigned int n = 0;
   fd_set fds;
   int err;
 
@@ -287,6 +308,12 @@ static int masl_loop(masl_handle_t* h)
 
     lseek(fd, 0, SEEK_SET);
     read(fd, buf, sizeof(buf));
+
+    if (((++n) % 5) == 0)
+    {
+      MASL_PRINTF("reseting\n");
+      masl_reset_slave(h);
+    }
 
     MASL_PRINTF("got\n");
   }
