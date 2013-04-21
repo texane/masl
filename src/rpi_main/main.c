@@ -3,8 +3,19 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <sys/time.h>
 #include <sys/select.h>
+
+
+#if 1
+#include <stdio.h>
+#define MASL_PRINTF(__s, ...) printf("%u: " __s, __LINE__, ## __VA_ARGS__)
+#define MASL_PERROR(__s, ...) printf("%u: " __s, __LINE__, ## __VA_ARGS__)
+#else
+#define MASL_PRINTF(__s, ...)
+#define MASL_PERROR(__s, ...)
+#endif
 
 
 /* gpio sysfs based implementation */
@@ -62,19 +73,23 @@ static int gpio_open_common
   int dir_fd;
   char buf[128];
 
-  export_fd = open("/sys/class/gpio/export", O_RDWR);
+  export_fd = open("/sys/class/gpio/export", O_WRONLY);
   if (export_fd == -1)
   {
-    perror("open");
+    MASL_PERROR("open export\n");
     goto on_error_0;
   }
 
   h->name_len = uint_to_string(index, h->name_str);
 
+  errno = 0;
   if (write(export_fd, h->name_str, h->name_len) != (ssize_t)h->name_len)
   {
-    perror("write");
-    goto on_error_1;
+    if (errno != EBUSY)
+    {
+      MASL_PERROR("write export\n");
+      goto on_error_1;
+    }
   }
 
 #define DIRECTION_SUFFIX_STR "/direction"
@@ -83,7 +98,7 @@ static int gpio_open_common
   dir_fd = open(buf, O_RDWR);
   if (dir_fd == -1)
   {
-    perror("open");
+    MASL_PERROR("open direction");
     goto on_error_2;
   }
 
@@ -91,7 +106,7 @@ static int gpio_open_common
   dir_len = is_in ? 2 : 3;
   if (write(dir_fd, dir_str, dir_len) != (ssize_t)dir_len)
   {
-    perror("write");
+    MASL_PERROR("write");
     goto on_error_3;
   }
 
@@ -101,7 +116,7 @@ static int gpio_open_common
   h->value_fd = open(buf, O_RDWR);
   if (h->value_fd == -1)
   {
-    perror("open");
+    MASL_PERROR("open value");
     goto on_error_4;
   }
 
@@ -136,7 +151,7 @@ static int gpio_close(gpio_handle_t* h)
   int err = 0;
   int fd;
 
-  fd = open("/sys/class/gpio/unexport", O_RDWR);
+  fd = open("/sys/class/gpio/unexport", O_WRONLY);
   if (fd != -1)
   {
     err = -1;
@@ -154,8 +169,8 @@ static int gpio_set_both_edges(gpio_handle_t* h)
 {
   /* echo {falling,rising,both} > /sys/class/gpio/gpio27/edge */
 
+  int err = -1;
   int edge_fd;
-  ssize_t n;
   char buf[128];
 
 #define EDGE_SUFFIX_STR "/edge"
@@ -165,17 +180,24 @@ static int gpio_set_both_edges(gpio_handle_t* h)
   edge_fd = open(buf, O_RDWR);
   if (edge_fd == -1)
   {
-    perror("open");
-    return -1;
+    MASL_PERROR("open");
+    goto on_error_0;
   }
 
 #define BOTH_STR "both"
 #define BOTH_LEN (sizeof(BOTH_STR) - 1)
-  n = write(edge_fd, BOTH_STR, BOTH_LEN);
-  close(edge_fd);
+  if (write(edge_fd, BOTH_STR, BOTH_LEN) != BOTH_LEN)
+  {
+    MASL_PERROR("write");
+    goto on_error_1;
+  }
 
-  if (n != (ssize_t)BOTH_LEN) return -1;
-  return 0;
+  err = 0;
+
+ on_error_1:
+  close(edge_fd);
+ on_error_0:
+  return err;
 }
 
 __attribute__((unused))
@@ -227,9 +249,15 @@ typedef struct masl_handle
 static int masl_init(masl_handle_t* h)
 {
   if (gpio_open_in(&h->int_gpio, MASL_CONFIG_GPIO_INT))
-    return -1;
-  gpio_set_both_edges(&h->int_gpio);
+    goto on_error_0;
+  if (gpio_set_both_edges(&h->int_gpio))
+    goto on_error_1;
   return 0;
+
+ on_error_1:
+  gpio_close(&h->int_gpio);
+ on_error_0:
+  return -1;
 }
 
 static int masl_fini(masl_handle_t* h)
@@ -241,14 +269,26 @@ static int masl_fini(masl_handle_t* h)
 static int masl_loop(masl_handle_t* h)
 {
   const int fd = gpio_get_wait_fd(&h->int_gpio);
+  unsigned char buf[32];
   fd_set fds;
+  int err;
 
   while (1)
   {
     FD_ZERO(&fds);
     FD_SET(fd, &fds);
-    select(fd + 1, NULL, NULL, &fds, NULL);
-    printf("got\n");
+
+    err = select(fd + 1, NULL, NULL, &fds, NULL);
+    if (err <= 0)
+    {
+      MASL_PERROR("select");
+      break ;
+    }
+
+    lseek(fd, 0, SEEK_SET);
+    read(fd, buf, sizeof(buf));
+
+    MASL_PRINTF("got\n");
   }
 
   return 0;
