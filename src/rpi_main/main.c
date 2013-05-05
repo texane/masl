@@ -5,7 +5,7 @@
 static masl_err_t onslave(masl_handle_t* h, unsigned int si, void* p)
 {
   printf("on slave: %u\n", si);
-  return MASL_ERR_SUCCESS;
+  return MASL_ERR_CONTINUE;
 }
 
 int main(int ac, char** av)
@@ -14,7 +14,7 @@ int main(int ac, char** av)
 
   if (masl_init(&h) != MASL_ERR_SUCCESS) return -1;
 
-  masl_loop(h, onslave, NULL);
+  masl_loop(h, onslave, NULL, 0);
   masl_fini(h);
 
   return 0;

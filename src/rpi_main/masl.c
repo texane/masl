@@ -344,19 +344,70 @@ masl_err_t masl_program_slave
   return MASL_ERR_UNIMPL;
 }
 
-masl_err_t masl_loop(masl_handle_t* h, masl_slavefn_t onslave, void* udata)
+static inline int timeval_to_ms(const struct timeval* tv)
 {
+  return 1 + tv->tv_sec * 1000 + tv->tv_usec / 1000;
+}
+
+static inline void ms_to_timeval(int ms, struct timeval* tv)
+{
+  const unsigned int us = (unsigned int)ms * 1000;
+  tv->tv_sec = us / 1000000;
+  tv->tv_usec = us % 1000000;
+}
+
+masl_err_t masl_loop
+(masl_handle_t* h, masl_slavefn_t onslave, void* udata, int timeout)
+{
+  const unsigned int has_timeout = (timeout <= 0) ? 0 : 1;
+  struct timeval tv_pre = { 0, };
+  struct timeval tv_now = { 0, };
+  struct timeval tv_rem = { 0, };
   unsigned char buf[32];
   unsigned int i;
   int nev;
 
+  if (has_timeout) ms_to_timeval(timeout, &tv_rem);
+  else timeout = -1;
+
   while (1)
   {
-    nev = epoll_wait(h->epoll_fd, h->epoll_events, MASL_SLAVE_COUNT, -1);
-    if (nev <= 0)
+  redo_epoll:
+    if (has_timeout)
     {
+      timeout = timeval_to_ms(&tv_rem);
+      gettimeofday(&tv_pre, NULL);
+    }
+
+    errno = 0;
+    nev = epoll_wait(h->epoll_fd, h->epoll_events, MASL_SLAVE_COUNT, timeout);
+
+    if (nev < 0)
+    {
+      if (errno == EINTR)
+      {
+	if (has_timeout)
+	{
+	  gettimeofday(&tv_now, NULL);
+	  timersub(&tv_now, &tv_pre, &tv_rem);
+	}
+
+	goto redo_epoll;
+      }
+
       MASL_PERROR();
-      return -1;
+      return MASL_ERR_FAILURE;
+    }
+    else if (nev == 0)
+    {
+      /* timeout, not an error */
+      return MASL_ERR_TIMEOUT;
+    }
+
+    if (has_timeout)
+    {
+      gettimeofday(&tv_now, NULL);
+      timersub(&tv_now, &tv_pre, &tv_rem);
     }
 
     for (i = 0; i < (unsigned int)nev; ++i)
@@ -367,15 +418,32 @@ masl_err_t masl_loop(masl_handle_t* h, masl_slavefn_t onslave, void* udata)
       gpio_handle_t* const gpio_handle = &h->int_gpio[si];
       const int gpio_fd = gpio_get_wait_fd(gpio_handle);
 
+      /* ack the event */
       lseek(gpio_fd, 0, SEEK_SET);
       read(gpio_fd, buf, sizeof(buf));
 
-      onslave(h, si, udata);
+      if (onslave(h, si, udata) != MASL_ERR_CONTINUE)
+      {
+	/* this is not an error, return 0 */
+	return MASL_ERR_SUCCESS;
+      }
     }
   }
 
-  return 0;
-} 
+  return MASL_ERR_SUCCESS;
+}
+
+static masl_err_t onslave(masl_handle_t* h, unsigned int si, void* p)
+{
+  *(unsigned int*)p = si;
+  return MASL_ERR_BREAK;
+}
+
+masl_err_t masl_wait_slave
+(masl_handle_t* h, unsigned int* si, int timeout)
+{
+  return masl_loop(h, onslave, si, timeout);
+}
 
 masl_err_t masl_write_slave
 (masl_handle_t* h, unsigned int si, const void* buf, size_t size)
