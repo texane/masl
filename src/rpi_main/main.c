@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/time.h>
-#include <sys/select.h>
+#include <sys/epoll.h>
 
 
 #if 1
@@ -247,10 +247,19 @@ typedef struct masl_handle
   gpio_handle_t int_gpio;
   gpio_handle_t reset_gpio;
   gpio_handle_t wake_gpio;
+
+#define MASL_EPOLL_EVENT_COUNT 1
+  int epoll_fd;
+  struct epoll_event epoll_events[MASL_EPOLL_EVENT_COUNT];
+
 } masl_handle_t;
 
 static int masl_init(masl_handle_t* h)
 {
+  int int_fd;
+  int err;
+  struct epoll_event ev;
+
   if (gpio_open_in(&h->int_gpio, MASL_CONFIG_GPIO_INT))
     goto on_error_0;
 
@@ -262,8 +271,30 @@ static int masl_init(masl_handle_t* h)
     goto on_error_2;
   gpio_set_value(&h->reset_gpio, 1);
 
+  /* epoll events, int gpio registration */
+  h->epoll_fd = epoll_create(MASL_EPOLL_EVENT_COUNT);
+  if (h->epoll_fd < 0)
+  {
+    MASL_PERROR();
+    goto on_error_3;
+  }
+
+  ev.events = EPOLLPRI;
+  ev.data.ptr = &h->int_gpio;
+  int_fd = gpio_get_wait_fd(&h->int_gpio);
+  err = epoll_ctl(h->epoll_fd, EPOLL_CTL_ADD, int_fd, &ev);
+  if (err)
+  {
+    MASL_PERROR();
+    goto on_error_4;
+  }
+
   return 0;
 
+ on_error_4:
+  close(h->epoll_fd);
+ on_error_3:
+  gpio_close(&h->reset_gpio);
  on_error_2:
  on_error_1:
   gpio_close(&h->int_gpio);
@@ -273,6 +304,7 @@ static int masl_init(masl_handle_t* h)
 
 static int masl_fini(masl_handle_t* h)
 {
+  close(h->epoll_fd);
   gpio_close(&h->reset_gpio);
   gpio_close(&h->int_gpio);
   return 0;
@@ -288,34 +320,39 @@ static int masl_reset_slave(masl_handle_t* h)
 
 static int masl_loop(masl_handle_t* h)
 {
-  const int fd = gpio_get_wait_fd(&h->int_gpio);
   unsigned char buf[32];
-  unsigned int n = 0;
-  fd_set fds;
+  unsigned int i;
   int err;
 
   while (1)
   {
-    FD_ZERO(&fds);
-    FD_SET(fd, &fds);
-
-    err = select(fd + 1, NULL, NULL, &fds, NULL);
+    err = epoll_wait(h->epoll_fd, h->epoll_events, MASL_EPOLL_EVENT_COUNT, -1);
     if (err <= 0)
     {
-      MASL_PERROR("select");
-      break ;
+      MASL_PERROR();
+      return -1;
     }
 
-    lseek(fd, 0, SEEK_SET);
-    read(fd, buf, sizeof(buf));
-
-    if (((++n) % 5) == 0)
+    for (i = 0; i < (unsigned int)err; ++i)
     {
-      MASL_PRINTF("reseting\n");
-      masl_reset_slave(h);
-    }
+      /* read the corresponding data */
 
-    MASL_PRINTF("got\n");
+      gpio_handle_t* const gpio_handle = h->epoll_events[i].data.ptr;
+      const int gpio_fd = gpio_get_wait_fd(gpio_handle);
+
+      lseek(gpio_fd, 0, SEEK_SET);
+      read(gpio_fd, buf, sizeof(buf));
+
+#if 0
+      if (((++n) % 5) == 0)
+      {
+	MASL_PRINTF("reseting\n");
+	masl_reset_slave(h);
+      }
+#endif
+
+      MASL_PRINTF("got\n");
+    }
   }
 
   return 0;
@@ -330,6 +367,7 @@ int main(int ac, char** av)
 
   if (masl_init(&h) == -1)
     return -1;
+
   masl_loop(&h);
   masl_fini(&h);
 

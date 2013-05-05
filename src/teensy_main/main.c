@@ -63,6 +63,7 @@ int main(void)
     pin_set_gpio_val(1);
     masl_notify_master();
     delay(1000);
+
     pin_set_gpio_val(0);
     masl_notify_master();
     delay(1000);
