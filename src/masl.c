@@ -338,10 +338,18 @@ masl_err_t masl_reset_slave(masl_handle_t* h, unsigned int si)
   return MASL_ERR_SUCCESS;
 }
 
+extern int load_linux_only_main(int, char**);
+
 masl_err_t masl_program_slave
 (masl_handle_t* h, unsigned int si, const char* filename)
 {
-  return MASL_ERR_UNIMPL;
+  const char* av[] = { "fubar", "-mmcu=mk20dx128", filename, NULL };
+  const int ac = 3;
+
+  /* TODO: use return code */
+  load_linux_only_main(ac, (char**)av);
+
+  return MASL_ERR_SUCCESS;
 }
 
 static inline int timeval_to_ms(const struct timeval* tv)

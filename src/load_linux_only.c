@@ -80,7 +80,13 @@ const char *filename=NULL;
 /*                                                              */
 /****************************************************************/
 
-int main(int argc, char **argv)
+int
+#if 0
+main
+#else
+load_linux_only_main
+#endif
+(int argc, char **argv)
 {
 	unsigned char buf[2048];
 	int num, addr, r, write_size=block_size+2;
