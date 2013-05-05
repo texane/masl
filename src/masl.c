@@ -332,9 +332,9 @@ masl_err_t masl_reset_slave(masl_handle_t* h, unsigned int si)
 {
   /* si the slave index */
 
-  if (gpio_set_value(&h->reset_gpio[0], 0)) return MASL_ERR_FAILURE;
+  if (gpio_set_value(&h->reset_gpio[si], 0)) return MASL_ERR_FAILURE;
   usleep(1000);
-  gpio_set_value(&h->reset_gpio[0], 1);
+  gpio_set_value(&h->reset_gpio[si], 1);
   return MASL_ERR_SUCCESS;
 }
 
@@ -343,6 +343,8 @@ extern int load_linux_only_main(int, char**);
 masl_err_t masl_program_slave
 (masl_handle_t* h, unsigned int si, const char* filename)
 {
+  /* TODO: si ignored for now */
+
   const char* av[] = { "fubar", "-mmcu=mk20dx128", filename, NULL };
   const int ac = 3;
 
