@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
 #include "masl.h"
 
 
@@ -236,6 +237,42 @@ static int gpio_get_wait_fd(gpio_handle_t* h)
 }
 
 
+/* spi thin wrapper (vfs based implementation) */
+
+static int spi_open(void)
+{
+  /* default the speed to 500khz */
+  static const unsigned int hz = 500000;
+
+  const int fd = open("/dev/spidev0.0", O_RDWR);
+
+  if (fd == -1) return -1;
+
+  if (ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &hz))
+  {
+    close(fd);
+    return -1;
+  }
+
+  return fd;
+}
+
+static void spi_close(int fd)
+{
+  close(fd);
+}
+
+static int spi_write(int fd, const void* data, size_t size)
+{
+  return (write(fd, data, size) != (ssize_t)size) ? -1 : 0;
+}
+
+static int spi_read(int fd, const void* data, size_t size)
+{
+  return (read(fd, data, size) != (ssize_t)size) ? -1 : 0;
+}
+
+
 /* masl */
 
 #define MASL_GPIO_INT 27
@@ -247,6 +284,9 @@ static int gpio_get_wait_fd(gpio_handle_t* h)
 
 struct masl_handle
 {
+  /* spi file descriptor */
+  int spi_fd;
+
   /* gpio handles */
   gpio_handle_t int_gpio[MASL_SLAVE_COUNT];
   gpio_handle_t reset_gpio[MASL_SLAVE_COUNT];
@@ -303,10 +343,19 @@ masl_err_t masl_init(masl_handle_t** hh)
     goto on_error_5;
   }
 
+  /* spi */
+  h->spi_fd = spi_open();
+  if (h->spi_fd == -1)
+  {
+    MASL_PERROR();
+    goto on_error_6;
+  }
+
   *hh = h;
 
   return MASL_ERR_SUCCESS;
 
+ on_error_6:
  on_error_5:
   close(h->epoll_fd);
  on_error_4:
@@ -322,10 +371,12 @@ masl_err_t masl_init(masl_handle_t** hh)
 
 masl_err_t masl_fini(masl_handle_t* h)
 {
+  spi_close(h->spi_fd);
   close(h->epoll_fd);
   gpio_close(&h->reset_gpio[0]);
   gpio_close(&h->int_gpio[0]);
-  return MASL_ERR_FAILURE;
+
+  return MASL_ERR_SUCCESS;
 }
 
 masl_err_t masl_reset_slave(masl_handle_t* h, unsigned int si)
@@ -458,13 +509,27 @@ masl_err_t masl_wait_slave
 masl_err_t masl_write_slave
 (masl_handle_t* h, unsigned int si, const void* buf, size_t size)
 {
-  /* TODO: spi_write */
-  return MASL_ERR_UNIMPL;
+  /* TODO: use slave index */
+
+  if (spi_write(h->fd, buf, size) == -1)
+  {
+    MASL_PERROR();
+    return MASL_ERR_FAILURE;
+  }
+
+  return MASL_ERR_SUCCESS;
 }
 
 masl_err_t masl_read_slave
 (masl_handle_t* h, unsigned int si, void* buf, size_t size)
 {
-  /* TODO: spi_read */
-  return MASL_ERR_UNIMPL;
+  /* TODO: use slave index */
+
+  if (spi_read(h->fd, buf, size) == -1)
+  {
+    MASL_PERROR();
+    return MASL_ERR_FAILURE;
+  }
+
+  return MASL_ERR_SUCCESS;
 }
