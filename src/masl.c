@@ -398,8 +398,8 @@ masl_err_t masl_program_slave
 {
   /* TODO: si ignored for now */
 
-  const char* av[] = { "fubar", "-mmcu=mk20dx128", filename, NULL };
-  const int ac = 3;
+  const char* av[] = { "fubar", "-w", "-mmcu=mk20dx128", filename, NULL };
+  const int ac = 4;
 
   /* TODO: use return code */
   load_linux_only_main(ac, (char**)av);

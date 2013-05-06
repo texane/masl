@@ -29,5 +29,5 @@ libmasl.a: $(O_FILES)
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 a.out: libmasl.a
-	$(CC) -Wall -O2 -I. -lmasl -lusb -lusb-1.0 -lpthread -lrt
+	$(CC) -Wall -O2 -I. main.c -L. $(LFLAGS) -lmasl -lusb -lusb-1.0 -lpthread -lrt
 unit: a.out
