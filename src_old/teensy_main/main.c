@@ -52,21 +52,105 @@ static inline void masl_notify_master(void)
   GPIOB_PTOR = 1 << 17;
 }
 
+
+/* dspi module, chapter 43 */
+
+static inline void dspi_halt(void)
+{
+  SPI0_MCR |= SPI_MCR_HALT;
+}
+
+static inline void dspi_start(void)
+{
+  SPI0_MCR &= ~SPI_MCR_HALT;
+}
+
+static inline unsigned int dspi_is_running(void)
+{
+#ifndef SPI_SR_TXRXS
+#define SPI_SR_TXRXS ((uint32_t)0x40000000)
+#endif
+  return SPI0_SR & SPI_SR_TXRXS;
+}
+
+static void dspi_setup_slave(void)
+{
+  /* configure inout ports */
+  /* chapters 10, 11, 12 */
+  /* PTD0, SPI0_CS0, ALT2 */
+  PORTD_PCR0 = 2 << 8;
+  /* PTD1, SPI0_SCK, ALT2 */
+  PORTD_PCR1 = 2 << 8;
+  /* PTD2, SPI0_SOUT, ALT2 */
+  PORTD_PCR2 = 2 << 8;
+  /* PTD3, SPI0_SIN, ALT2 */
+  PORTD_PCR3 = 2 << 8;
+
+  /* enable module clocking */
+  if ((SIM_SCGC6 & SIM_SCGC6_SPI0) == 0) SIM_SCGC6 |= SIM_SCGC6_SPI0;
+
+  /* stop the dspi module */
+  dspi_halt();
+  while (dspi_is_running()) ;
+
+  /* spi0_mcr: dspi module configuration register */
+  SPI0_MCR = 0;
+
+  /* spi0_ctar0: framing and clocking setup */
+  /* 8 bits wide frames */
+  /* clock polarity is inactive low */
+  /* sampled at leading edge, changed at following edge */
+  SPI0_CTAR0 = SPI_CTAR_FMSZ(8 - 1);
+
+  dspi_start();
+}
+
+static void dspi_push_data(uint8_t* s, uint32_t n)
+{
+  static volatile uint8_t* spio0_pushr = (volatile uint8_t*)0x4002c034;
+  for (; n; --n, ++s) *spio0_pushr = *s;
+}
+
+static unsigned int dspi_tx_counter(void)
+{
+  return (SPI0_SR >> 12) & 0xf;
+}
+
+static unsigned int dspi_is_empty(void)
+{
+  return dspi_tx_counter() == 0;
+}
+
+
+/* main */
+
 int main(void)
 {
+  uint8_t buf[4];
+  uint8_t i;
+  uint32_t x = 0;
+  uint32_t n = 0;
+
   pin_set_gpio_mode();
 
   masl_init();
 
+  dspi_setup_slave();
+
   while (1)
   {
-    pin_set_gpio_val(1);
-    masl_notify_master();
+    /* blink the led */
+    pin_set_gpio_val(x & 1);
     delay(500);
+    x ^= 1;
 
-    pin_set_gpio_val(0);
-    masl_notify_master();
-    delay(500);
+    if (dspi_is_empty())
+    {
+      for (i = 0; i < sizeof(buf); ++i) buf[i] = (uint8_t)(n + i);
+      ++n;
+      dspi_push_data(buf, sizeof(buf));
+      masl_notify_master();
+    }
   }
 
   return 0;

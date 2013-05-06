@@ -18,7 +18,7 @@ int main(int ac, char** av)
 {
   masl_handle_t* h;
   unsigned int si;
-  uint8_t data[32];
+  uint8_t data[4];
   masl_err_t err = MASL_ERR_SUCCESS;
 
   if (masl_init(&h) != MASL_ERR_SUCCESS) return -1;
@@ -26,6 +26,8 @@ int main(int ac, char** av)
   if (strcmp(av[1], "read") == 0)
   {
     si = atoi(av[2]);
+
+    memset(data, 0, sizeof(data));
 
     err = masl_read_slave(h, si, data, sizeof(data));
     if (err != MASL_ERR_SUCCESS) goto on_error;
