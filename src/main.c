@@ -8,56 +8,72 @@
 #include <sys/types.h>
 #include "masl.h"
 
+static void print_data(const uint8_t* data, size_t len)
+{
+  for (; len; --len, ++data) printf("%02x", *data);
+  printf("\n");
+}
+
 int main(int ac, char** av)
 {
   masl_handle_t* h;
   unsigned int si;
+  uint8_t data[32];
+  masl_err_t err = MASL_ERR_SUCCESS;
 
   if (masl_init(&h) != MASL_ERR_SUCCESS) return -1;
 
   if (strcmp(av[1], "read") == 0)
   {
-    const unsigned int si = atoi(av[2]);
-    size_t i;
-    uint8_t data[32];
-    const masl_err_t err = masl_read_slave(h, si, data, sizeof(data));
-    if (err != MASL_ERR_SUCCESS) printf("masl error\n");
-    for (i = 0; i < sizeof(data); ++i) printf("%02x", data[i]);
-    printf("\n");
+    si = atoi(av[2]);
+
+    err = masl_read_slave(h, si, data, sizeof(data));
+    if (err != MASL_ERR_SUCCESS) goto on_error;
+
+    print_data(data, sizeof(data));
   }
   else if (strcmp(av[1], "write") == 0)
   {
-    const unsigned int si = atoi(av[2]);
-    const char* const data = av[3];
-    const masl_err_t err = masl_write_slave(h, si, data, strlen(data));
-    if (err != MASL_ERR_SUCCESS) printf("masl error\n");
+    size_t len = strlen(av[3]);
+    if (len > sizeof(data)) len = sizeof(data);
+    memcpy(data, av[3], len);
+
+    si = atoi(av[2]);
+
+    err = masl_write_slave(h, si, data, sizeof(data));
+    if (err != MASL_ERR_SUCCESS) goto on_error;
   }
   else if (strcmp(av[1], "reset") == 0)
   {
-    const unsigned int si = atoi(av[2]);
-    const masl_err_t err = masl_reset_slave(h, si);
-    if (err != MASL_ERR_SUCCESS) printf("masl error\n");
+    si = atoi(av[2]);
+    err = masl_reset_slave(h, si);
+    if (err != MASL_ERR_SUCCESS) goto on_error;
   }
   else if (strcmp(av[1], "program") == 0)
   {
-    const unsigned int si = atoi(av[2]);
     const char* const filename = av[3];
-    const masl_err_t err = masl_program_slave(h, si, filename);
-    if (err != MASL_ERR_SUCCESS) printf("masl error\n");
+    si = atoi(av[2]);
+    err = masl_program_slave(h, si, filename);
+    if (err != MASL_ERR_SUCCESS) goto on_error;
   }
-  else if (strcmp(av[1], "wait") == 0)
+  else if (strcmp(av[1], "alert") == 0)
   {
     while (1)
     {
-      if (masl_wait_slave(h, &si, -1) != MASL_ERR_SUCCESS)
-      {
-	printf("masl slave error\n");
-	break ;
-      }
+      err = masl_wait_slave(h, &si, -1);
+      if (err != MASL_ERR_SUCCESS) goto on_error;
 
-      printf("on slave: %u\n", si);
+      printf("alert on slave: %u\n", si);
+
+      err = masl_read_slave(h, si, data, sizeof(data));
+      if (err != MASL_ERR_SUCCESS) goto on_error;
+
+      print_data(data, sizeof(data));
     }
   }
+
+ on_error:
+  if (err != MASL_ERR_SUCCESS) printf("masl_error: %u\n", err);
 
   masl_fini(h);
 
