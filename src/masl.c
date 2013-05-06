@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
+#include <linux/spi/spidev.h>
 #include "masl.h"
 
 
@@ -268,7 +269,7 @@ static int spi_write(int fd, const void* data, size_t size)
   return (write(fd, data, size) != (ssize_t)size) ? -1 : 0;
 }
 
-static int spi_read(int fd, const void* data, size_t size)
+static int spi_read(int fd, void* data, size_t size)
 {
   return (read(fd, data, size) != (ssize_t)size) ? -1 : 0;
 }
@@ -512,7 +513,7 @@ masl_err_t masl_write_slave
 {
   /* TODO: use slave index */
 
-  if (spi_write(h->fd, buf, size) == -1)
+  if (spi_write(h->spi_fd, buf, size) == -1)
   {
     MASL_PERROR();
     return MASL_ERR_FAILURE;
@@ -526,7 +527,7 @@ masl_err_t masl_read_slave
 {
   /* TODO: use slave index */
 
-  if (spi_read(h->fd, buf, size) == -1)
+  if (spi_read(h->spi_fd, buf, size) == -1)
   {
     MASL_PERROR();
     return MASL_ERR_FAILURE;

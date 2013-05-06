@@ -1,4 +1,5 @@
-CROSS_COMPILE ?= $(HOME)/repo/lfs_work_dir_rpib/host_install/armv6-rpi-linux-gnueabi/bin/armv6-rpi-linux-gnueabi-
+# CROSS_COMPILE ?= $(HOME)/repo/lfs_work_dir_rpib/host_install/armv6-rpi-linux-gnueabi/bin/armv6-rpi-linux-gnueabi-
+CROSS_COMPILE ?= $(HOME)/repo/lfs/_work_rpib_home/host_install/armv6-rpi-linux-gnueabi/bin/armv6-rpi-linux-gnueabi-
 
 C_FILES := masl.c load_linux_only.c
 H_FILES := masl.h
