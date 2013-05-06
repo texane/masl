@@ -245,18 +245,24 @@ static int spi_open(void)
 {
   /* default the speed to 500khz */
   static const unsigned int hz = 500000;
+  static const unsigned int mode = SPI_MODE_0;
+  static const unsigned int lsb_first = 0;
+  static const unsigned int bits_per_word = 8;
 
   const int fd = open("/dev/spidev0.0", O_RDWR);
 
   if (fd == -1) return -1;
 
-  if (ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &hz))
-  {
-    close(fd);
-    return -1;
-  }
+  if (ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &hz)) goto on_error;
+  if (ioctl(fd, SPI_IOC_WR_MODE, &mode)) goto on_error;
+  if (ioctl(fd, SPI_IOC_WR_LSB_FIRST, &lsb_first)) goto on_error;
+  if (ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits_per_word)) goto on_error;
 
   return fd;
+
+ on_error:
+  close(fd);
+  return -1;
 }
 
 static void spi_close(int fd)
