@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-. $HOME/repo/lfs/_work_rpib_home/sdk/build/env.sh
+LFS_SDK_CROSS_COMPILE=$HOME/repo/lfs_work_dir_rpib/host_install/armv6-rpi-linux-gnueabi/bin/armv6-rpi-linux-gnueabi-
 
 LIBUSB_COMPAT_DIR=$HOME/repo/masl/libusb/libusb-compat-0.1.4/install
 LIBUSB_COMPAT_CFLAGS=-I$LIBUSB_COMPAT_DIR/include
