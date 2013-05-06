@@ -238,6 +238,7 @@ static int gpio_get_wait_fd(gpio_handle_t* h)
 
 
 /* spi thin wrapper (vfs based implementation) */
+/* ref: http://armbedded.eu/node/318 */
 
 static int spi_open(void)
 {
